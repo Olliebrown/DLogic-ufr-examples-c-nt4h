@@ -53,6 +53,9 @@ void sdm_read(void);
 void sdm_write(void);
 void read_sdm_counter(void);
 void store_key(void);
+void tt_status_enable(void);
+void get_tt_status(void);
+void check_signature(void);
 
 //------------------------------------------------------------------------------
 int main(void)
@@ -256,6 +259,21 @@ void menu(char key)
 
 		case 'b':
 		case 'B':
+			tt_status_enable();
+			break;
+
+		case 'c':
+		case 'C':
+			get_tt_status();
+			break;
+
+		case 'd':
+		case 'D':
+			check_signature();
+			break;
+
+		case 'e':
+		case 'E':
 			store_key();
 			break;
 
@@ -278,15 +296,18 @@ void usage(void)
 		printf(" --------------------------------------------------\n");
 		printf("  (1) - get file setting\n"
 			   "  (2) - set file setting\n"
-			   "  (3) - get UID (NTAG424 only)\n"
-			   "  (4) - set random ID (NTAG424 only)\n"
+			   "  (3) - get UID (NTAG424 and NTAG424_TT)\n"
+			   "  (4) - set random ID (NTAG424 and NTAG4242_TT)\n"
 			   "  (5) - change AES key\n"
 			   "  (6) - linear_read\n"
 			   "  (7) - linear write\n"
 			   "  (8) - secure dynamic message read\n"
 			   "  (9) - secure dynamic message write\n"
-			   "  (a) - get sdm reading counter\n"
-			   "  (b) - store AES key into reader\n");
+			   "  (a) - get SDM reading counter\n"
+			   "  (b) - tag tamper enable (NTAG424_TT only)\n"
+			   "  (c) - get tag tamper status (NTAG424_TT only)\n"
+			   "  (d) - check ECC signature (NTAG424 and NTAG424_TT)\n"
+			   "  (e) - store AES key into reader\n");
 }
 //------------------------------------------------------------------------------
 UFR_STATUS NewCardInField(uint8_t sak, uint8_t *uid, uint8_t uid_size)
@@ -392,13 +413,33 @@ void get_file_setting(void)
 	uint8_t meta_data_key_no, file_data_read_key_no, read_ctr_key_no;
 	uint32_t file_size = 0, uid_offset = 0, read_ctr_offset = 0, picc_data_offset = 0;
 	uint32_t mac_input_offset = 0, enc_offset = 0, enc_length = 0, mac_offset = 0, read_ctr_limit = 0;
+	uint8_t tt_status_enable = 0;
+	uint32_t tt_status_offset = 0;
 	int file_no_int;
 
-	printf("\nEnter file number (1 - 2 for NTAG413) (1 - 3 for NTAG424)\n");
+	uint8_t dl_card_type;
+	status = GetDlogicCardType(&dl_card_type);
+	if(status)
+	{
+		printf("\nGet card type failed\n");
+		printf("Error code = 0x%08X\n", status);
+		return;
+	}
+
+	printf("\nEnter file number (1 - 2 for NTAG413) (1 - 3 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &file_no_int);
 	file_no = file_no_int;
 
-	status = nt4h_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
+	if(dl_card_type == DL_NTAG_424_DNA_TT)
+		status = nt4h_tt_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
+											&read_key_no, &write_key_no, &read_write_key_no, &change_key_no,
+											&uid_enable, &read_ctr_enable, &read_ctr_limit_enable, &enc_file_data_enable,
+											&meta_data_key_no, &file_data_read_key_no, &read_ctr_key_no,
+											&uid_offset, &read_ctr_offset, &picc_data_offset,
+											&mac_input_offset, &enc_offset, &enc_length, &mac_offset, &read_ctr_limit,
+											&tt_status_enable, &tt_status_offset);
+	else
+		status = nt4h_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
 									&read_key_no, &write_key_no, &read_write_key_no, &change_key_no,
 									&uid_enable, &read_ctr_enable, &read_ctr_limit_enable, &enc_file_data_enable,
 									&meta_data_key_no, &file_data_read_key_no, &read_ctr_key_no,
@@ -466,6 +507,14 @@ void get_file_setting(void)
 			else
 				printf("Encrypted part of file data: disabled\n");
 
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+			{
+				if(tt_status_enable)
+					printf("Tag Tamper status: enabled\n");
+				else
+					printf("Tag Tamper status: disabled\n");
+			}
+
 			printf("SDM access rights (0x0E free/plain, 0x0F no access/no data\n");
 			printf("SDM meta read: 0x%02X\n", meta_data_key_no);
 			printf("SDM file key: 0x%02X\n", file_data_read_key_no);
@@ -487,7 +536,14 @@ void get_file_setting(void)
 				printf("PICC data offset: %d\n", picc_data_offset);
 			}
 
-			if(file_data_read_key_no != 0x0F)
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+			{
+				if(tt_status_enable)
+					printf("Tag Tamper status offset: %d\n", tt_status_offset);
+
+			}
+
+			if(file_data_read_key_no <= 4)
 			{
 				//MAC exist
 				printf("MAC input data offset: %d\n", mac_input_offset);
@@ -520,6 +576,15 @@ void set_file_setting(void)
 	int file_no_int, key_no_int;
 	int read_key_no_int, write_key_no_int, read_write_key_no_int, change_key_no_int;
 	int aes_internal_key_no_int;
+
+	uint8_t dl_card_type;
+	status = GetDlogicCardType(&dl_card_type);
+	if(status)
+	{
+		printf("\nGet card type failed\n");
+		printf("Error code = 0x%08X\n", status);
+		return;
+	}
 
 	printf(" Select file type\n");
 	printf(" (1) - Standard data file\n");
@@ -615,6 +680,9 @@ void set_file_setting(void)
 		int read_ctr_limit_int, meta_data_key_no_int, file_data_read_key_no_int, read_ctr_key_no_int;
 		int uid_offset_int, read_ctr_offset_int, picc_data_offset_int;
 		int mac_input_offset_int, enc_offset_int, enc_length_int, mac_offset_int;
+		uint8_t tt_status_enable;
+		uint32_t tt_status_offset;
+		int tt_status_offset_int;
 
 		printf("UID mirroring enable (press Y or N)\n");
 		key = _getch();
@@ -650,21 +718,37 @@ void set_file_setting(void)
 		else
 			enc_file_data_enable = 0;
 
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+		{
+			printf("Tag tamper status enable (press Y or N)\n");
+			key = _getch();
+			if(key == 'Y' || key == 'y')
+			{
+				tt_status_enable = 1;
+
+				printf("Enter tag tamper status offset\n");
+				scanf("%d%*c", &tt_status_offset_int);
+				tt_status_offset = tt_status_offset_int;
+			}
+			else
+				tt_status_enable = 0;
+		}
+
 		printf("Enter SDM meta read access\n");
 		printf("NTAG413 14 - plain PICC data, 15 -no PICC data\n");
-		printf("NTAG424 0-4 encrypted PICC data, 14 - plain PICC data, 15 -no PICC data\n");
+		printf("NTAG424 and NTAG424_TT 0-4 encrypted PICC data, 14 - plain PICC data, 15 -no PICC data\n");
 		scanf("%d%*c", &meta_data_key_no_int);
 		meta_data_key_no = meta_data_key_no_int;
 
 		printf("Enter SDM file data read access\n");
 		printf("NTAG413 0-2 MAC exist, 15 no MAC\n");
-		printf("NTAG424 0-4 MAC exist, 15 no MAC\n");
+		printf("NTAG424 and NTAG424_TT 0-4 MAC exist, 15 no MAC\n");
 		scanf("%d%*c", &file_data_read_key_no_int);
 		file_data_read_key_no = file_data_read_key_no_int;
 
 		printf("Enter SDM reading counter access\n");
 		printf("NTAG413 0-2 authentication, 14 - free, 15 - no access\n");
-		printf("NTAG424 0-4 authentication, 14 - free, 15 - no access\n");
+		printf("NTAG424 and NTAG424_TT 0-4 authentication, 14 - free, 15 - no access\n");
 		scanf("%d%*c", &read_ctr_key_no_int);
 		read_ctr_key_no = read_ctr_key_no_int;
 
@@ -716,20 +800,44 @@ void set_file_setting(void)
 			mac_offset = mac_offset_int;
 		}
 
+
+
 		if(internal_key)
-			status = nt4h_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, curr_communication_mode,
+		{
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+				status = nt4h_tt_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, curr_communication_mode,
+																			new_communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
+																			uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
+																			meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
+																			uid_offset, read_ctr_offset, picc_data_offset,
+																			mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit,
+																			tt_status_enable, tt_status_offset);
+			else
+				status = nt4h_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, curr_communication_mode,
 															new_communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
 															uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
 															meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
 															uid_offset, read_ctr_offset, picc_data_offset,
 															mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit);
+		}
 		else
-			status = nt4h_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, curr_communication_mode,
+		{
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+				status = nt4h_tt_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, curr_communication_mode,
+																new_communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
+																uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
+																meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
+																uid_offset, read_ctr_offset, picc_data_offset,
+																mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit,
+																tt_status_enable, tt_status_offset);
+			else
+				status = nt4h_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, curr_communication_mode,
 												new_communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
 												uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
 												meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
 												uid_offset, read_ctr_offset, picc_data_offset,
 												mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit);
+		}
 	}
 
 	if(status)
@@ -1129,9 +1237,30 @@ void sdm_read(void)
 	uint8_t picc_data_tag, uid[7];
 	uint32_t sdm_read_cnt = 0;
 	uint8_t file_data_aes_key[16];
+	uint8_t tt_status_enable = 0;
+	uint32_t tt_status_offset = 0;
+
+	uint8_t dl_card_type;
+	status = GetDlogicCardType(&dl_card_type);
+	if(status)
+	{
+		printf("\nGet card type failed\n");
+		printf("Error code = 0x%08X\n", status);
+		return;
+	}
 
 	file_no = 2;
-	status = nt4h_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
+
+	if(dl_card_type == DL_NTAG_424_DNA_TT)
+		status = nt4h_tt_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
+											&read_key_no, &write_key_no, &read_write_key_no, &change_key_no,
+											&uid_enable, &read_ctr_enable, &read_ctr_limit_enable, &enc_file_data_enable,
+											&meta_data_key_no, &file_data_read_key_no, &read_ctr_key_no,
+											&uid_offset, &read_ctr_offset, &picc_data_offset,
+											&mac_input_offset, &enc_offset, &enc_length, &mac_offset, &read_ctr_limit,
+											&tt_status_enable, &tt_status_offset);
+	else
+		status = nt4h_get_file_settings(file_no, &file_type, &communication_mode, &sdm_enable, &file_size,
 									&read_key_no, &write_key_no, &read_write_key_no, &change_key_no,
 									&uid_enable, &read_ctr_enable, &read_ctr_limit_enable, &enc_file_data_enable,
 									&meta_data_key_no, &file_data_read_key_no, &read_ctr_key_no,
@@ -1256,16 +1385,42 @@ void sdm_read(void)
 		status = nt4h_decrypt_sdm_enc_file_data(sdm_read_cnt, uid, file_data_aes_key, file_data, enc_length / 2);
 		if(status)
 		{
-			printf("\nPart of file data decrypting failed");
+			printf("\nPart of file data decryption failed");
 			printf("Error code = 0x%08X\n", status);
 			return;
 		}
 
 		printf("Part of file data decrypted successful\n");
 		printf("Part of file data = %s\n", file_data);
+
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+		{
+			if(tt_status_enable)
+			{
+				uint8_t i;
+				for(i = 0; i < enc_length / 2; i++)
+				{
+					if(file_data[i] == 0)
+						break;
+				}
+				printf("\nTag tamper permanent status: %c\n", file_data[i - 2]);
+				printf("Tag tamper current status: %c\n", file_data[i - 1]);
+			}
+		}
+	}
+	else
+	{
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+		{
+			if(tt_status_enable)
+			{
+				printf("\nTag tamper permanent status: %c\n", data[tt_status_offset]);
+				printf("Tag tamper current status: %c\n", data[tt_status_offset + 1]);
+			}
+		}
 	}
 
-	if(file_data_read_key_no != 0x0F)
+	if(file_data_read_key_no <= 4)
 	{
 		//MAC exist
 		uint8_t ascii_mac_data[17];
@@ -1325,27 +1480,37 @@ void sdm_write(void)
 	uint32_t uid_offset = 0, read_ctr_offset = 0, picc_data_offset = 0;
 	uint32_t mac_input_offset = 0, enc_offset = 0, enc_length = 0, mac_offset = 0, read_ctr_limit = 0;
 	int read_ctr_limit_int, meta_data_key_no_int, file_data_read_key_no_int, read_ctr_key_no_int;
-
 	char key;
+	uint8_t tt_status_enable = 0, tt_status_crypted;
+	uint32_t tt_status_offset = 0;
+
+	uint8_t dl_card_type;
+	status = GetDlogicCardType(&dl_card_type);
+	if(status)
+	{
+		printf("\nGet card type failed\n");
+		printf("Error code = 0x%08X\n", status);
+		return;
+	}
 
 	file_no = 2;	//NDEF file
 	communication_mode = 0; //plain
 	read_key_no = 0x0E; //free read access
 
 	//file access key numbers
-	printf("\nEnter change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424)\n");
+	printf("\nEnter change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &key_no_int);
 	key_no = key_no_int;
 
-	printf("\nEnter write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424) or 14 or 15\n");
+	printf("\nEnter write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT) or 14 or 15\n");
 	scanf("%d%*c", &write_key_no_int);
 	write_key_no = write_key_no_int;
 
-	printf("\nEnter read_write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424) or 0x14 or 0x15\n");
+	printf("\nEnter read_write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT) or 0x14 or 0x15\n");
 	scanf("%d%*c", &read_write_key_no_int);
 	read_write_key_no = read_write_key_no_int;
 
-	printf("\nEnter new change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424)\n");
+	printf("\nEnter new change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &change_key_no_int);
 	change_key_no = change_key_no_int;
 
@@ -1353,14 +1518,13 @@ void sdm_write(void)
 	key = _getch();
 	if(key == 'Y' || key == 'y')
 	{
-		printf("NTAG424 only\n");
+		printf("NTAG424 and NTAG424_TT\n");
 		printf("Does PICC data encrypted? (press Y or N)\n");
 		key = _getch();
 		if(key == 'Y' || key == 'y')
 		{
 			//encrypted PICC data
-			printf("Enter SDM meta read access\n");
-			printf("NTAG424 0-4 encrypted PICC data\n");
+			printf("Enter SDM meta read key number (0 - 4)\n");
 			scanf("%d%*c", &meta_data_key_no_int);
 			meta_data_key_no = meta_data_key_no_int;
 		}
@@ -1388,7 +1552,7 @@ void sdm_write(void)
 		meta_data_key_no = 0x0F; //no PICC data
 	}
 
-	printf("Encrypted part of file data enable NTAG424 only (press Y or N)\n");
+	printf("Encrypted part of file data enable NTAG424 and NTAG424_TT (press Y or N)\n");
 	key = _getch();
 	if(key == 'Y' || key == 'y')
 		enc_file_data_enable = 1;
@@ -1399,9 +1563,9 @@ void sdm_write(void)
 	key = _getch();
 	if(key == 'Y' || key == 'y')
 	{
-		printf("Enter SDM file data read access\n");
+		printf("Enter SDM file data read key number\n");
 		printf("NTAG413 0-2 MAC exist\n");
-		printf("NTAG424 0-4 MAC exist\n");
+		printf("NTAG424 and NTAG424_TT 0-4 MAC exist\n");
 		scanf("%d%*c", &file_data_read_key_no_int);
 		file_data_read_key_no = file_data_read_key_no_int;
 	}
@@ -1425,7 +1589,7 @@ void sdm_write(void)
 
 	printf("Enter SDM reading counter access\n");
 	printf("NTAG413 0-2 authentication, 14 - free, 15 - no access\n");
-	printf("NTAG424 0-4 authentication, 14 - free, 15 - no access\n");
+	printf("NTAG424 and NTAG424_TT 0-4 authentication, 14 - free, 15 - no access\n");
 	scanf("%d%*c", &read_ctr_key_no_int);
 	read_ctr_key_no = read_ctr_key_no_int;
 
@@ -1484,6 +1648,24 @@ void sdm_write(void)
 		}
 	}
 
+	if(dl_card_type == DL_NTAG_424_DNA_TT)
+	{
+		printf("\nTT status mirroring enable (press Y or N)\n");
+		key = _getch();
+		if(key == 'Y' || key == 'y')
+			tt_status_enable = 1;
+		else
+			tt_status_enable = 0;
+		if(enc_file_data_enable)
+		{
+			printf("Does TT status within encrypted part of file data? (press Y or N)\n");
+			key = _getch();
+			if(key == 'Y' || key == 'y')
+				tt_status_crypted = 1;
+			else
+				tt_status_crypted = 0;
+		}
+	}
 
 	if(file_data_read_key_no != 0x0E)
 	{
@@ -1491,7 +1673,7 @@ void sdm_write(void)
 		int mac_input_ctr_int;
 		uint8_t mac_input_ctr = 0;
 
-		printf("Enter additional number of characters for MAC calculation\n");
+		printf("\nEnter additional number of characters for MAC calculation\n");
 		printf("counted to left from MAC position (default 0 no additional data)\n");
 		scanf("%d%*c", &mac_input_ctr_int);
 		mac_input_ctr = mac_input_ctr_int;
@@ -1506,6 +1688,18 @@ void sdm_write(void)
 			printf("Enter data for encryption\n");
 			enter_ascii_data(enc_file_data, &enc_file_len);
 
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+			{
+				if(tt_status_enable && tt_status_crypted)
+				{
+					enc_file_data[enc_file_len] = 't';
+					enc_file_data[enc_file_len + 1] = '=';
+					enc_file_data[enc_file_len + 2] = 0;
+					enc_file_data[enc_file_len + 3] = 0;
+					enc_file_len += 4;
+				}
+			}
+
 			ndef_data[url_len + NDEF_HEADER_LEN] = 'e';
 			ndef_data[url_len + NDEF_HEADER_LEN + 1] = '=';
 			total_enc_file_len = enc_file_len;
@@ -1516,9 +1710,32 @@ void sdm_write(void)
 			memcpy(&ndef_data[url_len + NDEF_HEADER_LEN + 2], enc_file_data, enc_file_len);
 
 			enc_offset = url_len + NDEF_HEADER_LEN + 2;
+
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+			{
+				if(tt_status_enable)
+				{
+					tt_status_offset = enc_offset + enc_file_len - 2;
+				}
+			}
+
 			mac_input_offset = enc_offset - mac_input_ctr;
 			enc_length = total_enc_file_len;
 			url_len += total_enc_file_len + 2;
+		}
+		else
+		{
+			if(dl_card_type == DL_NTAG_424_DNA_TT)
+			{
+				if(tt_status_enable)
+				{
+					ndef_data[url_len + NDEF_HEADER_LEN] = 't';
+					ndef_data[url_len + NDEF_HEADER_LEN + 1] = '=';
+					memset(&ndef_data[url_len + NDEF_HEADER_LEN + 2], '0', 2);
+					tt_status_offset = url_len + NDEF_HEADER_LEN + 2;
+					url_len += 4;
+				}
+			}
 		}
 
 		ndef_data[url_len + NDEF_HEADER_LEN] = 'm';
@@ -1528,6 +1745,20 @@ void sdm_write(void)
 			mac_input_offset = url_len + NDEF_HEADER_LEN + 2 - mac_input_ctr;
 		mac_offset = url_len + NDEF_HEADER_LEN + 2;
 		url_len += 18;
+	}
+	else
+	{
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+		{
+			if(tt_status_enable)
+			{
+				ndef_data[url_len + NDEF_HEADER_LEN] = 't';
+				ndef_data[url_len + NDEF_HEADER_LEN + 1] = '=';
+				memset(&ndef_data[url_len + NDEF_HEADER_LEN + 2], '0', 2);
+				tt_status_offset = url_len + NDEF_HEADER_LEN + 2;
+				url_len += 4;
+			}
+		}
 	}
 
 	ndef_header[1] = url_len + 5;
@@ -1567,19 +1798,41 @@ void sdm_write(void)
 	}
 
 	if(internal_key)
-		status = nt4h_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, 3,
+	{
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+			status = nt4h_tt_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, 3,
+																	communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
+																	uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
+																	meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
+																	uid_offset, read_ctr_offset, picc_data_offset,
+																	mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit,
+																	tt_status_enable, tt_status_offset);
+		else
+			status = nt4h_change_sdm_file_settings(aes_internal_key_no, file_no, key_no, 3,
 														communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
 														uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
 														meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
 														uid_offset, read_ctr_offset, picc_data_offset,
 														mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit);
+	}
 	else
-		status = nt4h_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, 3,
+	{
+		if(dl_card_type == DL_NTAG_424_DNA_TT)
+			status = nt4h_tt_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, 3,
+														communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
+														uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
+														meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
+														uid_offset, read_ctr_offset, picc_data_offset,
+														mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit,
+														tt_status_enable, tt_status_offset);
+		else
+			status = nt4h_change_sdm_file_settings_pk(aes_key_ext, file_no, key_no, 3,
 											communication_mode, read_key_no, write_key_no, read_write_key_no, change_key_no,
 											uid_enable, read_ctr_enable, read_ctr_limit_enable, enc_file_data_enable,
 											meta_data_key_no, file_data_read_key_no, read_ctr_key_no,
 											uid_offset, read_ctr_offset, picc_data_offset,
 											mac_input_offset, enc_offset, enc_length, mac_offset, read_ctr_limit);
+	}
 
 	if(status)
 	{
@@ -1811,3 +2064,221 @@ void store_key(void)
 	return;
 }
 //------------------------------------------------------------------------------
+
+void tt_status_enable(void)
+{
+	printf(" -------------------------------------------------------------------\n");
+	printf("                     Tag tamper status enable                       \n");
+	printf(" -------------------------------------------------------------------\n");
+
+	UFR_STATUS status;
+	char key;
+	uint8_t aes_key[16];
+	uint8_t aes_internal_key_no, tt_status_key_no;
+	int aes_internal_key_no_int, tt_status_key_no_int;
+
+	printf("\nEnter TT status access\n");
+	printf("key ordinal number (0 - 4), free access - 14, no access - 15\n");
+	scanf("%d%*c", &tt_status_key_no_int);
+	tt_status_key_no = tt_status_key_no_int;
+
+	printf("Select authentication mode\n");
+	printf(" (1) - Provided key\n");
+	printf(" (2) - Internal key\n");
+	key = _getch();
+
+	if(key == '1')
+	{
+		printf("Enter AES key\n");
+		if(!enter_aes_key(aes_key))
+			return;
+		status = nt4h_enable_tt_pk(aes_key, tt_status_key_no);
+	}
+	else if(key == '2')
+	{
+		printf("Enter AES internal key ordinal number (0 - 15)\n");
+		scanf("%d%*c", &aes_internal_key_no_int);
+		aes_internal_key_no = aes_internal_key_no_int;
+
+		status = nt4h_enable_tt(aes_internal_key_no, tt_status_key_no);
+	}
+	else
+	{
+		printf("\n Wrong choice\n");
+		return;
+	}
+
+	if(status)
+	{
+		printf("\nTag tamper enable error\n");
+		printf("Error code = %02X\n", status);
+	}
+	else
+		printf("\nTag tamper enabled successful\n");
+
+	return;
+}
+//---------------------------------------------------------------------------------------
+
+void get_tt_status(void)
+{
+	printf(" -------------------------------------------------------------------\n");
+	printf("                       Get tag tamper status                        \n");
+	printf(" -------------------------------------------------------------------\n");
+
+	UFR_STATUS status;
+	char key;
+	uint8_t aes_key[16];
+	uint8_t aes_internal_key_no, tt_status_key_no;
+	int aes_internal_key_no_int, tt_status_key_no_int;
+	uint8_t tt_perm_status, tt_curr_status;
+
+	printf("Select authentication mode\n");
+	printf(" (1) - Provided key\n");
+	printf(" (2) - Internal key\n");
+	printf(" (3) - NoAuthentication\n");
+
+	key = _getch();
+
+	if(key == '1' || key == '2')
+	{
+		printf("\nkey ordinal number (0 - 4)\n");
+		scanf("%d%*c", &tt_status_key_no_int);
+		tt_status_key_no = tt_status_key_no_int;
+	}
+
+	if(key == '1')
+	{
+		printf("Enter AES key\n");
+		if(!enter_aes_key(aes_key))
+			return;
+		status = nt4h_get_tt_status_pk(aes_key, tt_status_key_no, &tt_perm_status, &tt_curr_status);
+	}
+	else if(key == '2')
+	{
+		printf("Enter AES internal key ordinal number (0 - 15)\n");
+		scanf("%d%*c", &aes_internal_key_no_int);
+		aes_internal_key_no = aes_internal_key_no_int;
+
+		status = nt4h_get_tt_status(aes_internal_key_no, tt_status_key_no, &tt_perm_status, &tt_curr_status);
+	}
+	else if(key == '3')
+	{
+		status = nt4h_get_tt_status_no_auth(&tt_perm_status, &tt_curr_status);
+	}
+	else
+	{
+		printf("\n Wrong choice\n");
+		return;
+	}
+
+	if(status)
+	{
+		printf("\nTag tamper status error\n");
+		printf("Error code = %02X\n", status);
+	}
+	else
+	{
+		printf("\nTag tamper status read successful\n");
+		printf("Permanent status is: %c\n", tt_perm_status);
+		printf("Current status is: %c\n", tt_curr_status);
+	}
+
+	return;
+}
+//------------------------------------------------------------------------------------------------
+
+void check_signature(void)
+{
+	printf(" -------------------------------------------------------------------\n");
+	printf("                       ECC signature validation                     \n");
+	printf(" -------------------------------------------------------------------\n");
+
+	UFR_STATUS status;
+	char key;
+	uint8_t aes_key[16];
+	uint8_t aes_internal_key_no, tt_status_key_no;
+	int aes_internal_key_no_int, tt_status_key_no_int;
+	uint8_t sak[2], uid[7], uid_len;
+	uint8_t ecc_signature[56], dlogic_card_type, ecc_sig_len;
+
+	status = GetCardIdEx(sak, uid, &uid_len);
+	if(status)
+	{
+		printf("\nGet UID error\n");
+		printf("Error code = %02X\n", status);
+		return;
+	}
+
+	if(uid_len == 4)
+	{
+		printf("\nRandom ID detected, authentication required\n");
+		printf("Select authentication mode\n");
+		printf(" (1) - Provided key\n");
+		printf(" (2) - Internal key\n");
+
+		key = _getch();
+
+		if(key == '1' || key == '2')
+		{
+			printf("\nkey ordinal number (0 - 4)\n");
+			scanf("%d%*c", &tt_status_key_no_int);
+			tt_status_key_no = tt_status_key_no_int;
+		}
+
+		if(key == '1')
+		{
+			printf("Enter AES key\n");
+			if(!enter_aes_key(aes_key))
+				return;
+			status = nt4h_rid_read_ecc_signature_pk(aes_key, tt_status_key_no, uid, ecc_signature, &dlogic_card_type);
+		}
+		else if(key == '2')
+		{
+			printf("Enter AES internal key ordinal number (0 - 15)\n");
+			scanf("%d%*c", &aes_internal_key_no_int);
+			aes_internal_key_no = aes_internal_key_no_int;
+
+			status = nt4h_rid_read_ecc_signature(aes_internal_key_no, tt_status_key_no, uid, ecc_signature, &dlogic_card_type);
+		}
+		else
+		{
+			printf("\n Wrong choice\n");
+			return;
+		}
+	}
+	else
+	{
+		status = ReadECCSignatureExt(ecc_signature, &ecc_sig_len, uid, &uid_len, &dlogic_card_type);
+	}
+
+	if(status)
+	{
+		printf("\nECC signature read error\n");
+		printf("Error code = %02X\n", status);
+	}
+	else
+	{
+		printf("\nECC signature read successful\n");
+		printf("ECC signature: ");
+		print_hex_ln(ecc_signature, 56, ":");
+		printf("\nECC signature validation\n");
+
+		status = OriginalityCheck(ecc_signature, uid, 7, dlogic_card_type);
+
+		if(status == UFR_OK)
+			printf("TAG IS NXP GENUINE\n");
+		else if(status == UFR_NOT_NXP_GENUINE)
+			printf("TAG ISN’T NXP GENUINE\n");
+		else if(status == UFR_OPEN_SSL_DYNAMIC_LIB_FAILED)
+			printf("OpenSSL library error\n");
+		else if(status == UFR_OPEN_SSL_DYNAMIC_LIB_NOT_FOUND)
+			printf("OpenSSL library not found\n");
+		else
+		{
+			printf("Originality check error\n");
+			printf("Error code = %02X\n", status);
+		}
+	}
+	return;
+}

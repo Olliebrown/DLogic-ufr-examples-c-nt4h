@@ -117,6 +117,8 @@ sz_ptr GetDlTypeName(uint8_t dl_type_code) {
 		return "DL_NTAG_413_DNA";
 	case DL_NTAG_424_DNA:
 		return "DL_NTAG_424_DNA";
+	case DL_NTAG_424_DNA_TT:
+		return "DL_NTAG_424_DNA_TT";
 	case DL_MIFARE_CLASSIC_1K:
 		return "DL_MIFARE_CLASSIC_1K";
 	case DL_MIFARE_CLASSIC_4K:
