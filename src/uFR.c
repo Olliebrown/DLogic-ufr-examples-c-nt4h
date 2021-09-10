@@ -187,6 +187,10 @@ sz_ptr GetDlTypeName(uint8_t dl_type_code) {
 		return "DL_GENERIC_ISO14443_4_TYPE_B";
 	case DL_GENERIC_ISO14443_3_TYPE_B:
 		return "DL_GENERIC_ISO14443_3_TYPE_B";
+	case DL_MIFARE_PLUS_EV1_2K_SL0:
+		return " DL_MIFARE_PLUS_EV1_2K_SL0";
+	case DL_MIFARE_PLUS_EV1_4K_SL0:
+		return "DL_MIFARE_PLUS_EV1_4K_SL0";
 	case DL_IMEI_UID:
 		return "DL_IMEI_UID";
 	}

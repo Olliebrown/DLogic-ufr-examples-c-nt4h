@@ -588,34 +588,34 @@ void set_file_setting(void)
 
 	printf(" Select file type\n");
 	printf(" (1) - Standard data file\n");
-	printf(" (2) - Secure messaging data file\n");
+	printf(" (2) - Standard data file with Secure Dynamic Messaging\n");
 	key = _getch();
 	if(key == '2')
 		smd_data_file = 1;
 	else
 		smd_data_file = 0;
 
-	printf("\nEnter file number (1 - 2 for NTAG413) (1 - 3 for NTAG424)\n");
+	printf("\nEnter file number (1 - 2 for NTAG413) (1 - 3 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &file_no_int);
 	file_no = file_no_int;
 
-	printf("\nEnter change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424)\n");
+	printf("\nEnter change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &key_no_int);
 	key_no = key_no_int;
 
 	curr_communication_mode = 3;
 
 	printf("File access rights (14 - free access, 15 - no access)\n");
-	printf("\nEnter read key number (0 - 2 for NTAG413) (0 - 4 for NTAG424) or 14\n");
+	printf("\nEnter read key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT) or 14\n");
 	scanf("%d%*c", &read_key_no_int);
 	read_key_no = read_key_no_int;
-	printf("\nEnter write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424) or 14 or 15\n");
+	printf("\nEnter write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT) or 14 or 15\n");
 	scanf("%d%*c", &write_key_no_int);
 	write_key_no = write_key_no_int;
-	printf("\nEnter read_write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424) or 0x14 or 0x15\n");
+	printf("\nEnter read_write key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT) or 14 or 15\n");
 	scanf("%d%*c", &read_write_key_no_int);
 	read_write_key_no = read_write_key_no_int;
-	printf("\nEnter new change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424)\n");
+	printf("\nEnter new change key number (0 - 2 for NTAG413) (0 - 4 for NTAG424 and NTAG424_TT)\n");
 	scanf("%d%*c", &change_key_no_int);
 	change_key_no = change_key_no_int;
 
